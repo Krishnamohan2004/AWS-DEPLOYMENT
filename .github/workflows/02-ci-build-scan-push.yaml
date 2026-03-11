@@ -13,20 +13,33 @@ permissions:
 
 jobs:
   build-test-scan-push:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-latest"') }}
     defaults:
       run:
         shell: bash
 
     env:
       APP_DIR: board
-      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: ""
+      AWS_REGION: ""
       PUSH_TO_ECR: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve config
+        run: |
+          AWS_REGION="${{ vars.AWS_REGION != '' && vars.AWS_REGION || secrets.AWS_REGION }}"
+          ECR_REPOSITORY="${{ vars.ECR_REPOSITORY != '' && vars.ECR_REPOSITORY || secrets.ECR_REPOSITORY }}"
+          SONAR_HOST_URL="${{ secrets.SONAR_HOST_URL != '' && secrets.SONAR_HOST_URL || secrets.SONAR_HOST_URI }}"
+
+          echo "AWS_REGION=${AWS_REGION}" >> "$GITHUB_ENV"
+          echo "ECR_REPOSITORY=${ECR_REPOSITORY}" >> "$GITHUB_ENV"
+          echo "SONAR_HOST_URL=${SONAR_HOST_URL}" >> "$GITHUB_ENV"
+
+      - name: Preflight (docker)
+        run: docker version
 
       - name: Setup Java 11
         uses: actions/setup-java@v4
@@ -40,13 +53,13 @@ jobs:
         run: ./mvnw -B clean verify
 
       - name: SonarQube scan
-        if: ${{ secrets.SONAR_TOKEN != '' && secrets.SONAR_HOST_URL != '' }}
+        if: ${{ secrets.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' }}
         uses: sonarsource/sonarqube-scan-action@v2
         with:
           projectBaseDir: ${{ env.APP_DIR }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
 
       - name: Configure AWS credentials (OIDC)
         if: ${{ env.PUSH_TO_ECR == 'true' && secrets.AWS_ROLE_TO_ASSUME != '' }}
@@ -56,20 +69,16 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Configure AWS credentials (Access keys)
-        if: ${{ env.PUSH_TO_ECR == 'true' && secrets.AWS_ROLE_TO_ASSUME == '' }}
+        if: ${{ env.PUSH_TO_ECR == 'true' && secrets.AWS_ROLE_TO_ASSUME == '' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Resolve AWS account id
-        if: ${{ env.PUSH_TO_ECR == 'true' }}
-        id: aws-account
-        run: echo "account_id=$(aws sts get-caller-identity --query Account --output text)" >> "$GITHUB_OUTPUT"
-
       - name: Login to Amazon ECR
         if: ${{ env.PUSH_TO_ECR == 'true' }}
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build Docker image
@@ -78,14 +87,14 @@ jobs:
           IMAGE_TAG="${GITHUB_SHA}"
           if [[ "${PUSH_TO_ECR}" == "true" ]]; then
             if [[ -z "${ECR_REPOSITORY}" ]]; then
-              echo "vars.ECR_REPOSITORY is empty. Set repository name via GitHub Actions variable ECR_REPOSITORY."
+              echo "ECR_REPOSITORY is empty. Set it as a repo Variable ECR_REPOSITORY or repo Secret ECR_REPOSITORY."
               exit 1
             fi
             if [[ -z "${AWS_REGION}" ]]; then
-              echo "vars.AWS_REGION is empty. Set AWS region via GitHub Actions variable AWS_REGION."
+              echo "AWS_REGION is empty. Set it as a repo Variable AWS_REGION or repo Secret AWS_REGION."
               exit 1
             fi
-            IMAGE_URI="${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+            IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:${IMAGE_TAG}"
           else
             IMAGE_URI="boardgame:${IMAGE_TAG}"
           fi
@@ -109,7 +118,7 @@ jobs:
       - name: Tag and push latest
         if: ${{ env.PUSH_TO_ECR == 'true' && github.ref == 'refs/heads/main' }}
         run: |
-          IMAGE_LATEST="${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest"
+          IMAGE_LATEST="${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:latest"
           docker tag "${{ steps.image.outputs.image_uri }}" "${IMAGE_LATEST}"
           docker push "${IMAGE_LATEST}"
 

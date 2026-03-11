@@ -30,16 +30,20 @@ Deploys `board/k8s/deployment-service.yaml` after replacing `IMAGE_PLACEHOLDER`.
 Create these Repository Variables:
 
 - `AWS_REGION` (example: `ap-south-2`)
+- `RUNS_ON` (optional JSON) (examples: `"ubuntu-latest"` or `["self-hosted","devops-server"]`)
 - `ECR_REPOSITORY` (example: `boardgame`)
 - `EKS_CLUSTER_NAME` (example: `boardgame-eks`)
+
+These values can also be set as Repository Secrets (same names) and the workflows will still work.
 
 AWS authentication (choose one):
 
 - Recommended (OIDC): Repository Secret `AWS_ROLE_TO_ASSUME`
 - Alternative (access keys): Repository Secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+- Self-hosted EC2 option: attach an IAM Role (instance profile) to the runner EC2 and leave AWS secrets empty
 
 SonarQube (optional):
 
 - Repository Secret `SONAR_HOST_URL` (example: `http://x.x.x.x:9000`)
 - Repository Secret `SONAR_TOKEN`
-
+  - If you already created `SONAR_HOST_URI`, workflows accept that too.
