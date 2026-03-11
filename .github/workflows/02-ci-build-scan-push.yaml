@@ -54,6 +54,14 @@ jobs:
           java-version: 11
           cache: maven
 
+      - name: Prepare Maven wrapper (Linux)
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          # Ensure wrapper is runnable on Linux runners even if committed without +x.
+          chmod +x mvnw || true
+          # If mvnw has CRLF line endings, bash can fail; strip trailing CR.
+          sed -i 's/\r$//' mvnw || true
+
       - name: Build and test (Maven wrapper)
         working-directory: ${{ env.APP_DIR }}
         run: ./mvnw -B clean verify
