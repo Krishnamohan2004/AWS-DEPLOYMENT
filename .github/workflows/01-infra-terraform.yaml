@@ -1,0 +1,76 @@
+name: "Stage 1 - Terraform (ECR + EKS)"
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: terraform-infra
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      TF_DIR: infra/eks-ecr
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      TF_VAR_region: ${{ vars.AWS_REGION }}
+      TF_VAR_ecr_repository_name: ${{ vars.ECR_REPOSITORY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Preflight (required vars)
+        run: |
+          if [[ -z "${AWS_REGION}" ]]; then
+            echo "Missing repository variable AWS_REGION (example: ap-south-2)."
+            exit 1
+          fi
+          if [[ -z "${ECR_REPOSITORY}" ]]; then
+            echo "Missing repository variable ECR_REPOSITORY (example: boardgame)."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials (Access keys)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform fmt (check)
+        run: terraform -chdir="$TF_DIR" fmt -check
+
+      - name: Terraform init
+        run: terraform -chdir="$TF_DIR" init
+
+      - name: Terraform validate
+        run: terraform -chdir="$TF_DIR" validate
+
+      - name: Terraform apply
+        run: terraform -chdir="$TF_DIR" apply -auto-approve
+
+      - name: Print outputs
+        run: terraform -chdir="$TF_DIR" output

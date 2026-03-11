@@ -1,0 +1,45 @@
+# AWS Deployment (ECR + EKS + GitHub Actions)
+
+This repo contains:
+
+- `infra/eks-ecr`: Terraform to create ECR + EKS (and a VPC)
+- `board`: Java/Spring Boot app (Maven) + Dockerfile + Kubernetes manifest
+- `.github/workflows`: 3-stage GitHub Actions pipeline
+
+## Stage 1: Create ECR + EKS (Terraform)
+
+Run workflow: `Stage 1 - Terraform (ECR + EKS)` (manual `workflow_dispatch`).
+
+## Stage 2: CI (Build + Sonar + Docker + Trivy + Push to ECR)
+
+Runs on `push` to `main` and PRs.
+
+Output image tags:
+
+- `${GITHUB_SHA}` (always)
+- `latest` (only on `main`)
+
+## Stage 3: CD (Deploy to EKS)
+
+Runs automatically after Stage 2 succeeds (on `main`), or can be triggered manually.
+
+Deploys `board/k8s/deployment-service.yaml` after replacing `IMAGE_PLACEHOLDER`.
+
+## GitHub Actions configuration
+
+Create these Repository Variables:
+
+- `AWS_REGION` (example: `ap-south-2`)
+- `ECR_REPOSITORY` (example: `boardgame`)
+- `EKS_CLUSTER_NAME` (example: `boardgame-eks`)
+
+AWS authentication (choose one):
+
+- Recommended (OIDC): Repository Secret `AWS_ROLE_TO_ASSUME`
+- Alternative (access keys): Repository Secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+
+SonarQube (optional):
+
+- Repository Secret `SONAR_HOST_URL` (example: `http://x.x.x.x:9000`)
+- Repository Secret `SONAR_TOKEN`
+

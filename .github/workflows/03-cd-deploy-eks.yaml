@@ -1,0 +1,101 @@
+name: "Stage 3 - CD (Deploy to EKS)"
+
+on:
+  workflow_run:
+    workflows: ["Stage 2 - CI (Maven + Sonar + Docker + Trivy + ECR)"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "ECR image tag (default: commit SHA)"
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-eks
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ (github.event_name == 'workflow_dispatch') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      APP_DIR: board
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials (Access keys)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve AWS account id
+        id: aws-account
+        run: echo "account_id=$(aws sts get-caller-identity --query Account --output text)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Update kubeconfig
+        run: |
+          if [[ -z "${AWS_REGION}" ]]; then
+            echo "vars.AWS_REGION is empty. Set AWS region via GitHub Actions variable AWS_REGION."
+            exit 1
+          fi
+          if [[ -z "${EKS_CLUSTER_NAME}" ]]; then
+            echo "vars.EKS_CLUSTER_NAME is empty. Set it to your EKS cluster name."
+            exit 1
+          fi
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+
+      - name: Compute image uri
+        id: image
+        run: |
+          if [[ -z "${ECR_REPOSITORY}" ]]; then
+            echo "vars.ECR_REPOSITORY is empty. Set repository name via GitHub Actions variable ECR_REPOSITORY."
+            exit 1
+          fi
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.image_tag }}"
+            if [[ -z "${TAG}" ]]; then TAG="${GITHUB_SHA}"; fi
+          else
+            TAG="${{ github.event.workflow_run.head_sha }}"
+          fi
+          IMAGE_URI="${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${TAG}"
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+
+      - name: Render manifest
+        run: |
+          src="${APP_DIR}/k8s/deployment-service.yaml"
+          out="${APP_DIR}/k8s/rendered.yaml"
+          sed "s|IMAGE_PLACEHOLDER|${{ steps.image.outputs.image_uri }}|g" "${src}" > "${out}"
+          echo "Rendered ${out}"
+
+      - name: Apply
+        run: kubectl apply -f "${APP_DIR}/k8s/rendered.yaml"
+
+      - name: Rollout status
+        run: kubectl rollout status deployment/boardgame-deployment --timeout=180s
