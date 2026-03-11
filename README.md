@@ -30,9 +30,10 @@ Deploys `board/k8s/deployment-service.yaml` after replacing `IMAGE_PLACEHOLDER`.
 Create these Repository Variables:
 
 - `AWS_REGION` (example: `ap-south-2`)
-- `RUNS_ON` (optional JSON) (examples: `"ubuntu-latest"` or `["self-hosted","devops-server"]`)
+- `RUNS_ON` (optional JSON) (default: `["self-hosted"]`, example: `["self-hosted","devops-server"]`)
 - `ECR_REPOSITORY` (example: `boardgame`)
 - `EKS_CLUSTER_NAME` (example: `boardgame-eks`)
+- `TRIVY_BLOCKING` (optional) set to `true` to fail CI on CRITICAL vulns
 
 `RUNS_ON` must be a Variable (not a Secret). The other values can be set as Variables or Secrets (same names).
 

@@ -1,0 +1,6 @@
+# Temporary ignores to keep CI moving while we migrate dependencies.
+# Remove entries as you fix/upgrade.
+
+# spring-web: fixed only in Spring Framework 6.x (Spring Boot 3.x / Jakarta).
+CVE-2016-1000027
+
