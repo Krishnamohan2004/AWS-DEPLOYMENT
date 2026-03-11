@@ -34,7 +34,7 @@ Create these Repository Variables:
 - `ECR_REPOSITORY` (example: `boardgame`)
 - `EKS_CLUSTER_NAME` (example: `boardgame-eks`)
 
-These values can also be set as Repository Secrets (same names) and the workflows will still work.
+`RUNS_ON` must be a Variable (not a Secret). The other values can be set as Variables or Secrets (same names).
 
 AWS authentication (choose one):
 

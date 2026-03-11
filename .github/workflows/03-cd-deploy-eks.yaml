@@ -42,20 +42,24 @@ jobs:
           AWS_REGION="${{ vars.AWS_REGION != '' && vars.AWS_REGION || secrets.AWS_REGION }}"
           ECR_REPOSITORY="${{ vars.ECR_REPOSITORY != '' && vars.ECR_REPOSITORY || secrets.ECR_REPOSITORY }}"
           EKS_CLUSTER_NAME="${{ vars.EKS_CLUSTER_NAME != '' && vars.EKS_CLUSTER_NAME || secrets.EKS_CLUSTER_NAME }}"
+          HAS_ROLE_TO_ASSUME="${{ secrets.AWS_ROLE_TO_ASSUME != '' }}"
+          HAS_ACCESS_KEYS="${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}"
 
           echo "AWS_REGION=${AWS_REGION}" >> "$GITHUB_ENV"
           echo "ECR_REPOSITORY=${ECR_REPOSITORY}" >> "$GITHUB_ENV"
           echo "EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME}" >> "$GITHUB_ENV"
+          echo "HAS_ROLE_TO_ASSUME=${HAS_ROLE_TO_ASSUME}" >> "$GITHUB_ENV"
+          echo "HAS_ACCESS_KEYS=${HAS_ACCESS_KEYS}" >> "$GITHUB_ENV"
 
       - name: Configure AWS credentials (OIDC)
-        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
+        if: ${{ env.HAS_ROLE_TO_ASSUME == 'true' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Configure AWS credentials (Access keys)
-        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        if: ${{ env.HAS_ROLE_TO_ASSUME != 'true' && env.HAS_ACCESS_KEYS == 'true' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
