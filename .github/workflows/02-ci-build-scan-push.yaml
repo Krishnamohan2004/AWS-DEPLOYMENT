@@ -2,9 +2,9 @@ name: "Stage 2 - CI (Maven + Sonar + Docker + Trivy + ECR)"
 
 on:
   push:
-    branches: ["main"]
+    branches: ["feature"]
   pull_request:
-    branches: ["main"]
+    branches: ["feature"]
   workflow_dispatch: {}
 
 permissions:
