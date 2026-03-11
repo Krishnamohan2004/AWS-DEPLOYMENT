@@ -1,1 +1,78 @@
 
+name: AWS CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1️⃣ Checkout code
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # 2️⃣ Set up Java
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        distribution: temurin
+        java-version: 17
+
+    # 3️⃣ Build project with Maven
+    - name: Build with Maven
+      run: mvn clean install -B
+
+    # 4️⃣ Run tests
+    - name: Run Tests
+      run: mvn test
+
+    # 5️⃣ SonarQube scan
+    - name: SonarQube Scan
+      uses: sonarsource/sonarcloud-github-action@master
+      with:
+        projectBaseDir: .
+        extraArgs: >
+          -Dsonar.projectKey=YOUR_PROJECT_KEY
+          -Dsonar.organization=YOUR_ORG
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+    # 6️⃣ Configure AWS credentials
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # 7️⃣ Login to ECR
+    - name: Login to AWS ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    # 8️⃣ Build Docker image
+    - name: Build Docker image
+      run: |
+        IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/your-app:latest
+        docker build -t $IMAGE_URI .
+        docker tag $IMAGE_URI $IMAGE_URI
+
+    # 9️⃣ Push Docker image to ECR
+    - name: Push Docker image
+      run: |
+        IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/your-app:latest
+        docker push $IMAGE_URI
+
+    # 🔟 Deploy to ECS
+    - name: Deploy to ECS
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ecs-task-definition.json
+        service: your-ecs-service
+        cluster: your-ecs-cluster
+        wait-for-service-stability: true
